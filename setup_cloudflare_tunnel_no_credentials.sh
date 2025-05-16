@@ -29,19 +29,3 @@ for i in $(seq 1 30); do
     echo "Waiting for API to start ($i/30)..."
     sleep 2
 done
-
-# Check if cloudflared is installed
-if ! command -v cloudflared &> /dev/null; then
-    echo "Error: cloudflared is not installed. Please install it first."
-    echo "On Debian/Ubuntu, run: sudo apt install cloudflared"
-    echo "Or download from: https://github.com/cloudflare/cloudflared/releases"
-    exit 1
-fi
-
-# Start the ephemeral tunnel with verbose flags
-echo "Starting Cloudflare Tunnel for $LOCAL_ADDRESS"
-cloudflared tunnel --url "$LOCAL_ADDRESS" --logfile "$LOG_FILE" --loglevel debug &
-TUNNEL_PID=$!
-
-# Wait to ensure the tunnel starts and capture URL
-sleep 10
