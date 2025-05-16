@@ -65,7 +65,31 @@ jobs:
       run: |
         # Verify the API is accessible through the tunnel
         curl -s ${{ env.TUNNEL_URL }}/api/status
+    
+    - name: Update repository status in flask_github_manager_final
+      if: success() && env.TUNNEL_URL != ''
+      run: |
+        # Get the repository name from the GitHub repository
+        REPO_NAME=$(echo "$GITHUB_REPOSITORY" | cut -d'/' -f2)
         
+        # Create JSON payload with updated status and cloudflare tunnel URL
+        JSON_PAYLOAD=$(cat << EOF
+        {
+          "repository_name": "$REPO_NAME",
+          "status": "Active",
+          "cloudflare_tunnel_url": "${{ env.TUNNEL_URL }}"
+        }
+        EOF
+        )
+        
+        # Send PUT request to update the repository status
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -d "$JSON_PAYLOAD" \
+          https://render-measurements-save-officers.trycloudflare.com/api/update_repository_status
+        
+        echo "::notice::Repository status updated in flask_github_manager_final"
+    
     - name: Keep tunnel running
       if: github.event_name == 'workflow_dispatch'
       run: |
