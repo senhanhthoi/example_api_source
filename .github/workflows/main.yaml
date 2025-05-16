@@ -1,0 +1,74 @@
+name: Deploy and Expose API with Cloudflare Tunnel
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      
+    - name: Build Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: false
+        load: true
+        tags: api-app:latest
+    
+    - name: Install Cloudflared
+      run: |
+        curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
+        chmod +x cloudflared
+        sudo mv cloudflared /usr/local/bin/
+    
+    - name: Start the API container
+      run: |
+        docker run -d -p 5001:8080 --name api-container api-app:latest
+        # Wait for the API to start
+        sleep 10
+        curl -s http://localhost:5001/
+    
+    - name: Set up Cloudflare Tunnel
+      run: |
+        # Create directory for logs
+        mkdir -p /tmp/cloudflared
+        touch /tmp/cloudflared/tunnel.log
+        
+        # Start the ephemeral tunnel
+        cloudflared tunnel --url http://localhost:5001 --logfile /tmp/cloudflared/tunnel.log --loglevel debug &
+        TUNNEL_PID=$!
+        
+        # Wait for tunnel to initialize
+        sleep 10
+        
+        # Extract and display the tunnel URL
+        TUNNEL_URL=$(grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' /tmp/cloudflared/tunnel.log | tail -1)
+        echo "::notice::Your application is available at: $TUNNEL_URL"
+        echo "TUNNEL_URL=$TUNNEL_URL" >> $GITHUB_ENV
+        
+        # Display logs for debugging
+        echo "Cloudflare tunnel logs:"
+        tail -n 20 /tmp/cloudflared/tunnel.log
+    
+    - name: Verify API through tunnel
+      run: |
+        # Verify the API is accessible through the tunnel
+        curl -s ${{ env.TUNNEL_URL }}/api/status
+        
+    - name: Keep tunnel running
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        echo "Tunnel will remain active for 1 hour. URL: ${{ env.TUNNEL_URL }}"
+        # Keep the workflow running to maintain the tunnel for manual testing
+        sleep 3600 
