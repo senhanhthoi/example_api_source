@@ -45,27 +45,3 @@ TUNNEL_PID=$!
 
 # Wait to ensure the tunnel starts and capture URL
 sleep 10
-
-# Print logs to help debugging
-echo "Cloudflare tunnel logs:"
-tail -n 20 "$LOG_FILE"
-
-# Check if the tunnel is running
-if kill -0 $TUNNEL_PID 2>/dev/null; then
-    echo "Tunnel is running successfully with PID: $TUNNEL_PID"
-    
-    # Try to extract and display the tunnel URL
-    TUNNEL_URL=$(grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' "$LOG_FILE" | tail -1)
-    if [ -n "$TUNNEL_URL" ]; then
-        echo "Your application is available at: $TUNNEL_URL"
-    else
-        echo "Warning: Could not extract tunnel URL from logs."
-    fi
-else
-    echo "Error: Tunnel failed to start. Check logs at $LOG_FILE"
-    cat "$LOG_FILE"
-    exit 1
-fi
-
-# Keep this script running to maintain the tunnel
-wait $TUNNEL_PID 
