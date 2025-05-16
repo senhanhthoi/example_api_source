@@ -26,73 +26,29 @@ jobs:
         load: true
         tags: api-app:latest
     
-    - name: Install Cloudflared
+    - name: Start the API container with Cloudflare Tunnel
       run: |
-        curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
-        chmod +x cloudflared
-        sudo mv cloudflared /usr/local/bin/
+        # Run the container which will start both the API and Cloudflare tunnel
+        # The container's entrypoint will handle setting up the tunnel and updating the database
+        docker run -d -p 8080:8080 --name api-container api-app:latest
+        
+        # Wait for container to initialize
+        sleep 30
+        
+        # Check container logs to see if tunnel was established
+        echo "Container logs:"
+        docker logs api-container
+        
+        # Check if we can extract the Cloudflare tunnel URL from logs
+        TUNNEL_URL=$(docker logs api-container 2>&1 | grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' | tail -1)
+        if [ -n "$TUNNEL_URL" ]; then
+          echo "::notice::Your application is available at: $TUNNEL_URL"
+        else
+          echo "::warning::Could not extract Cloudflare tunnel URL from logs"
+        fi
     
-    - name: Start the API container
-      run: |
-        docker run -d -p 5001:8080 --name api-container api-app:latest
-        # Wait for the API to start
-        sleep 10
-        curl -s http://localhost:5001/
-    
-    - name: Set up Cloudflare Tunnel
-      run: |
-        # Create directory for logs
-        mkdir -p /tmp/cloudflared
-        touch /tmp/cloudflared/tunnel.log
-        
-        # Start the ephemeral tunnel
-        cloudflared tunnel --url http://localhost:5001 --logfile /tmp/cloudflared/tunnel.log --loglevel debug &
-        TUNNEL_PID=$!
-        
-        # Wait for tunnel to initialize
-        sleep 10
-        
-        # Extract and display the tunnel URL
-        TUNNEL_URL=$(grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' /tmp/cloudflared/tunnel.log | tail -1)
-        echo "::notice::Your application is available at: $TUNNEL_URL"
-        echo "TUNNEL_URL=$TUNNEL_URL" >> $GITHUB_ENV
-        
-        # Display logs for debugging
-        echo "Cloudflare tunnel logs:"
-        tail -n 20 /tmp/cloudflared/tunnel.log
-    
-    - name: Verify API through tunnel
-      run: |
-        # Verify the API is accessible through the tunnel
-        curl -s ${{ env.TUNNEL_URL }}/api/status
-    
-    - name: Update repository status in flask_github_manager_final
-      if: success() && env.TUNNEL_URL != ''
-      run: |
-        # Get the repository name from the GitHub repository
-        REPO_NAME=$(echo "$GITHUB_REPOSITORY" | cut -d'/' -f2)
-        
-        # Create JSON payload with updated status and cloudflare tunnel URL
-        JSON_PAYLOAD=$(cat << EOF
-        {
-          "repository_name": "$REPO_NAME",
-          "status": "Active",
-          "cloudflare_tunnel_url": "${{ env.TUNNEL_URL }}"
-        }
-        EOF
-        )
-        
-        # Send PUT request to update the repository status
-        curl -X POST \
-          -H "Content-Type: application/json" \
-          -d "$JSON_PAYLOAD" \
-          https://render-measurements-save-officers.trycloudflare.com/api/update_repository_status
-        
-        echo "::notice::Repository status updated in flask_github_manager_final"
-    
-    - name: Keep tunnel running
+    - name: Keep container running for monitoring (workflow dispatch only)
       if: github.event_name == 'workflow_dispatch'
       run: |
-        echo "Tunnel will remain active for 1 hour. URL: ${{ env.TUNNEL_URL }}"
-        # Keep the workflow running to maintain the tunnel for manual testing
+        echo "Container will remain active for 1 hour for monitoring."
         sleep 3600 

@@ -10,10 +10,28 @@
 set -x
 
 # Configuration
-LOCAL_ADDRESS="http://0.0.0.0:5001"
-LOG_FILE="/var/log/cloudflared_no_credentials.log"
+LOCAL_ADDRESS="http://0.0.0.0:8080" # Using port 8080 from the API
+LOG_FILE="/tmp/cloudflared_tunnel.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
+
+# Set the URL for the Flask manager API that will receive the tunnel URL
+FLASK_MANAGER_API_URL="https://nano-breathing-mount-concentrations.trycloudflare.com/api/update_repository_status"
+
+# Wait for the API to become available
+echo "Waiting for the API to start..."
+for i in $(seq 1 30); do
+    if curl -s "http://localhost:8080" > /dev/null; then
+        echo "API is reachable at http://localhost:8080"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "Error: API is not running at http://localhost:8080"
+        exit 1
+    fi
+    echo "Waiting for API to start ($i/30)..."
+    sleep 2
+done
 
 # Check if cloudflared is installed
 if ! command -v cloudflared &> /dev/null; then
@@ -22,21 +40,6 @@ if ! command -v cloudflared &> /dev/null; then
     echo "Or download from: https://github.com/cloudflare/cloudflared/releases"
     exit 1
 fi
-
-# Verify local service is actually running before starting tunnel
-echo "Verifying local service is running..."
-for i in $(seq 1 10); do
-    if curl -s "http://localhost:5001" > /dev/null; then
-        echo "Local service is reachable at http://localhost:5001"
-        break
-    fi
-    if [ $i -eq 10 ]; then
-        echo "Error: Local service is not running at http://localhost:5001"
-        exit 1
-    fi
-    echo "Waiting for local service to start ($i/10)..."
-    sleep 2
-done
 
 # Start the ephemeral tunnel with verbose flags
 echo "Starting Cloudflare Tunnel for $LOCAL_ADDRESS"
@@ -53,13 +56,39 @@ tail -n 20 "$LOG_FILE"
 # Check if the tunnel is running
 if kill -0 $TUNNEL_PID 2>/dev/null; then
     echo "Tunnel is running successfully with PID: $TUNNEL_PID"
-    echo "Access your application at the URL displayed in the logs above."
-    echo "To stop the tunnel, kill the process with PID $TUNNEL_PID"
     
     # Try to extract and display the tunnel URL
     TUNNEL_URL=$(grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' "$LOG_FILE" | tail -1)
     if [ -n "$TUNNEL_URL" ]; then
         echo "Your application is available at: $TUNNEL_URL"
+        
+        # Get the repository name from the GitHub repository environment variable or use a default
+        REPO_NAME=${GITHUB_REPOSITORY##*/}
+        if [ -z "$REPO_NAME" ]; then
+            # If not running in GitHub Actions, try to determine from directory name
+            REPO_NAME=$(basename $(pwd))
+        fi
+        
+        # Create JSON payload for the API request
+        JSON_PAYLOAD=$(cat << EOF
+{
+  "repository_name": "$REPO_NAME",
+  "status": "Active",
+  "cloudflare_tunnel_url": "$TUNNEL_URL"
+}
+EOF
+)
+        
+        # Send the request to update the database
+        echo "Updating repository status in database..."
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -d "$JSON_PAYLOAD" \
+          -s "$FLASK_MANAGER_API_URL"
+          
+        echo "Database update request sent."
+    else
+        echo "Warning: Could not extract tunnel URL from logs."
     fi
 else
     echo "Error: Tunnel failed to start. Check logs at $LOG_FILE"
