@@ -15,9 +15,6 @@ LOG_FILE="/tmp/cloudflared_tunnel.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
 
-# Set the URL for the Flask manager API that will receive the tunnel URL
-FLASK_MANAGER_API_URL="https://nano-breathing-mount-concentrations.trycloudflare.com/api/update_repository_status"
-
 # Wait for the API to become available
 echo "Waiting for the API to start..."
 for i in $(seq 1 30); do
@@ -61,32 +58,6 @@ if kill -0 $TUNNEL_PID 2>/dev/null; then
     TUNNEL_URL=$(grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' "$LOG_FILE" | tail -1)
     if [ -n "$TUNNEL_URL" ]; then
         echo "Your application is available at: $TUNNEL_URL"
-        
-        # Get the repository name from the GitHub repository environment variable or use a default
-        REPO_NAME=${GITHUB_REPOSITORY##*/}
-        if [ -z "$REPO_NAME" ]; then
-            # If not running in GitHub Actions, try to determine from directory name
-            REPO_NAME=$(basename $(pwd))
-        fi
-        
-        # Create JSON payload for the API request
-        JSON_PAYLOAD=$(cat << EOF
-{
-  "repository_name": "$REPO_NAME",
-  "status": "Active",
-  "cloudflare_tunnel_url": "$TUNNEL_URL"
-}
-EOF
-)
-        
-        # Send the request to update the database
-        echo "Updating repository status in database..."
-        curl -X POST \
-          -H "Content-Type: application/json" \
-          -d "$JSON_PAYLOAD" \
-          -s "$FLASK_MANAGER_API_URL"
-          
-        echo "Database update request sent."
     else
         echo "Warning: Could not extract tunnel URL from logs."
     fi
