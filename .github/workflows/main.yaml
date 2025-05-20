@@ -27,16 +27,11 @@ jobs:
       - name: Start the API container with Cloudflare Tunnel
         run: >
           docker run -d -p 8080:8080 --name api-container api-app:latest
-
           sleep 30
-
           echo "Container logs:"
-
           docker logs api-container
-
           TUNNEL_URL=$(docker logs api-container 2>&1 | grep -o
           'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' | tail -1)
-
           if [ -n "$TUNNEL_URL" ]; then
             echo "::notice::Your application is available at: $TUNNEL_URL"
           else
@@ -52,7 +47,7 @@ jobs:
           echo "Sleeping for 5 hours before re-dispatching workflow..."
           sleep 18000
   trigger_next:
-    needs: process
+    needs: deploy
     runs-on: ubuntu-latest
     steps:
       - name: Trigger next chunk
