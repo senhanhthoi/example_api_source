@@ -10,45 +10,54 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-      
-    - name: Build Docker image
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        push: false
-        load: true
-        tags: api-app:latest
-    
-    - name: Start the API container with Cloudflare Tunnel
-      run: |
-        # Run the container which will start both the API and Cloudflare tunnel
-        # The container's entrypoint will handle setting up the tunnel and updating the database
-        docker run -d -p 8080:8080 --name api-container api-app:latest
-        
-        # Wait for container to initialize
-        sleep 30
-        
-        # Check container logs to see if tunnel was established
-        echo "Container logs:"
-        docker logs api-container
-        
-        # Check if we can extract the Cloudflare tunnel URL from logs
-        TUNNEL_URL=$(docker logs api-container 2>&1 | grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' | tail -1)
-        if [ -n "$TUNNEL_URL" ]; then
-          echo "::notice::Your application is available at: $TUNNEL_URL"
-        else
-          echo "::warning::Could not extract Cloudflare tunnel URL from logs"
-        fi
-    
-    - name: Keep container running for monitoring (workflow dispatch only)
-      if: github.event_name == 'workflow_dispatch'
-      run: |
-        echo "Container will remain active for 1 hour for monitoring."
-        sleep 3600 
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: false
+          load: true
+          tags: api-app:latest
+
+      - name: Start the API container with Cloudflare Tunnel
+        run: |
+          docker run -d -p 8080:8080 --name api-container api-app:latest
+          sleep 30
+          echo "Container logs:"
+          docker logs api-container
+          TUNNEL_URL=$(docker logs api-container 2>&1 | grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' | tail -1)
+          if [ -n "$TUNNEL_URL" ]; then
+            echo "::notice::Your application is available at: $TUNNEL_URL"
+          else
+            echo "::warning::Could not extract Cloudflare tunnel URL from logs"
+          fi
+
+      - name: Keep container running for monitoring (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Container will remain active for 1 hour for monitoring."
+          sleep 3600
+
+      - name: Wait 5 hours before triggering next build
+        run: |
+          echo "Sleeping for 5 hours before re-dispatching workflow..."
+          sleep 18000
+
+      - name: Trigger a new build
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: context.workflow,  // dispatch this same workflow file
+              ref: github.ref_name
+            });
