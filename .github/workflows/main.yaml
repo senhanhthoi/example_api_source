@@ -25,13 +25,21 @@ jobs:
           load: true
           tags: 'api-app:latest'
       - name: Start the API container with Cloudflare Tunnel
-        run: >
+        run: |
+          # Start the API container
           docker run -d -p 8080:8080 --name api-container api-app:latest
+          
+          # Wait for container to initialize
           sleep 30
+          
+          # Show container logs
           echo "Container logs:"
           docker logs api-container
-          TUNNEL_URL=$(docker logs api-container 2>&1 | grep -o
-          'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' | tail -1)
+          
+          # Extract Cloudflare tunnel URL
+          TUNNEL_URL=$(docker logs api-container 2>&1 | grep -o 'https://[a-zA-Z0-9.-]*\.trycloudflare\.com' | tail -1)
+          
+          # Output the URL
           if [ -n "$TUNNEL_URL" ]; then
             echo "::notice::Your application is available at: $TUNNEL_URL"
           else
