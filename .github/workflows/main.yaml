@@ -1,5 +1,10 @@
 name: Deploy and Expose API with Cloudflare Tunnel
 
+# Grant the GITHUB_TOKEN permission to dispatch workflows
+permissions:
+  contents: read
+  workflows: write
+
 on:
   push:
     branches: [ main, master ]
@@ -29,6 +34,7 @@ jobs:
       - name: Start the API container with Cloudflare Tunnel
         run: |
           docker run -d -p 8080:8080 --name api-container api-app:latest
+          # Give the container time to initialize
           sleep 30
           echo "Container logs:"
           docker logs api-container
@@ -58,6 +64,6 @@ jobs:
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              workflow_id: context.workflow,  // dispatch this same workflow file
+              workflow_id: context.workflow,   // dispatch this same workflow file
               ref: github.ref_name
             });
